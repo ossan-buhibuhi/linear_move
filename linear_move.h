@@ -1,7 +1,12 @@
 //
 //  linear_move.h
+//  fix_test
 //
+//  Created by 松崎暁 on 2015/11/14.
 //  Copyright (c) 2015年 松崎暁. All rights reserved.
+//
+//  Released under the MIT license
+//  http://opensource.org/licenses/mit-license.php
 //
 
 #ifndef fix_test_liner_move_h
