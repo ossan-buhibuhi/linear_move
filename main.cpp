@@ -1,19 +1,14 @@
 //
-//  main.cppf
+//  main.cpp
 //
 //  Copyright (c) 2015年 松崎暁. All rights reserved.
 //
+//  Released under the MIT license
+//  http://opensource.org/licenses/mit-license.php
+//
 
 #include <iostream>
-#include <vector>
-#include <list>
-#include <memory>
-#include <thread>
-#include <future>
-
 #include "linear_move.h"
-
-#include <chrono>
 
 class Fuga {
 	int num;
@@ -27,11 +22,21 @@ public:
 		{ life_cnt++; copy_cnt++; }
 	~Fuga ()
 		{ life_cnt--; }
+    Fuga(Fuga && self)
+	: num (std::move (self.num))
+		{};
+    Fuga & operator = (Fuga && self)
+		{ num = std::move(self.num); return *this; }
+	bool operator == (const Fuga & fuga)
+		{ return num == fuga.num; }
+	bool operator != (const Fuga & fuga)
+		{ return num != fuga.num; }
 	int get_num () const
 		{ return num; }
 	void set_num (int n)
 		{ num = n; }
 };
+
 int Fuga::copy_cnt = 0;
 int Fuga::life_cnt = 0;
 
@@ -48,10 +53,19 @@ public:
 		{ life_cnt++; }
 	~Hoge ()
 		{ life_cnt--; }
+    Hoge(Hoge && self)
+	: fuga (std::move (self.fuga))
+		{};
+    Hoge & operator = (Hoge && self)
+		{ fuga = std::move(self.fuga); return *this; }
 	
+	bool operator == (const Hoge & hoge)
+		{ return *fuga == *hoge.fuga; }
+	bool operator != (const Hoge & hoge)
+		{ return *fuga != *hoge.fuga; }
 	const uniq <Fuga> & get_fuga ()
 		{ return fuga; }
-	int get_num ()
+	int get_num () const
 		{ return fuga->get_num(); }
 	void set_num (int n)
 		{ return fuga->set_num(n); }
@@ -69,463 +83,538 @@ std::ostream& operator<<(std::ostream& os, const uniq <Hoge> & hoge)
 	return os;
 }
 
-void test_0 () {
-	auto vec (
-		group (2,
-		list_to_vector (
-		fold (uniq <std::list<uniq<Hoge>>> (new std::list<uniq<Hoge>>()),
-			[] (uniq <std::list<uniq<Hoge>>> & acc, uniq<Hoge> & x) {
-				acc->insert (acc->begin(), (move(x))); return move(acc);
-			},
-		reverse (
-		progress (10, uniq <Hoge> (new Hoge(1)),
+bool progress__test () {
+	puts ("progress__test");
+
+	auto hoges =
+		progress (3, uniq<Hoge> (new Hoge (2)),
 			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num * 2));
+				int num = hoge->get_num();
+				return uniq<Hoge> (new Hoge (num + 2));
 			}
-		))))));
-	std::cout << vec << std::endl;
-}
-
-void test_1 () {
-	uniq_vector <uniq <Hoge>> hoges (
-		progress (10, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num * 2));
-			}));
-	std::cout << hoges << std::endl;
-	auto refs (
-		left (2,
-		group (3,
-		left (8,
-		reverse (
-		refdup (hoges)
-		)))));
-	
-	std::cout << refs << std::endl;
-	std::cout << refs->at(0)->at(0)->get_num() << std::endl;
-	std::cout << hoges << std::endl;
-}
-
-void test_2 () {
-	auto hoges (
-		join (
-		para_map <uniq_vector<uniq<Hoge>>> (
-			[] (uniq_vector <uniq <Hoge>> & hoges) {
-				return map <uniq<Hoge>> (
-					[] (uniq <Hoge> & hoge) {
-						int num = hoge->get_fuga()->get_num();
-						return uniq <Hoge> (new Hoge (num * 2));
-					},
-					move (hoges));
-			},
-		group (5000,
-		progress (10000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num + 1));
-			}
-		)))));
-	std::cout << hoges << std::endl;
-}
-
-void test_3 () {
-	auto hoges (
-		map <uniq<Hoge>> (2,
-			[] (uniq <Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num * 2));
-			},
-		progress (10000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num + 1));
-			}
-		)));
-	std::cout << hoges << std::endl;
-}
-
-uniq_vector <uniq <Hoge>> foo () {
-	return
-		map <uniq<Hoge>> (2,
-			[] (uniq <Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num * 2));
-			},
-		progress (10000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num + 1));
-			}
-		));
-}
-
-void test_4 () {
-	auto hoges (promise <uniq_vector <uniq <Hoge>>> ([]() { return foo (); }));
-	std::cout << hoges->get() << std::endl;
-}
-
-void test_5 (int th_cnt=1, int x=100) {
-	timer t ("test_5");
-	auto hoges (
-		filter (th_cnt,
-			[] (uniq <Hoge> & hoge) {
-				return hoge->get_fuga()->get_num() % 3;
-			},
-		progress (x, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num = hoge->get_fuga()->get_num();
-				return uniq <Hoge> (new Hoge (num + 1));
-			}
-		)));
-//	std::cout << hoges << std::endl;
-}
-
-void test_6 () {
-	auto hoges (
-		assort(3,
-			[] (uniq <Hoge> & hoge) {
-				int num (hoge->get_fuga()->get_num());
-				return
-					!(num % 2) ?
-						0:
-					!(num % 3) ?
-						1:
-					2;
-			},
-		progress (25, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				int num (hoge->get_fuga()->get_num());
-				return uniq <Hoge> (new Hoge (num + 1));
-			}
-		)));
-	std::cout << hoges << std::endl;
-}
-/*
-template <class T>
-uniq_vector<T> quick_sort (uniq_vector<T> && vec) {
-	struct {
-		int th_cnt;
-		uniq_vector<T> operator () (uniq_vector <T> && vec) {
-			return !vec->size() ?
-				move (vec):
-				[this, &vec] () {
-					T head (std::move (vec->at(0)));
-					auto sel (
-						select (2,
-							[&head] (T & elem) {
-								return elem > head ? 1 : 0;
-							},
-							right (1, move (vec))
-							));
-					return combine (
-						append (std::move (head), (*this) (move (sel->at(1)))),
-						(*this) (std::move (sel->at(0)))
-						);
-				} ();
-		}
-	} self = {2};
-	return reverse (self (move (vec)));
-}
-*/
-
-template <class T, class F>
-uniq_vector<T> quick_sort (int th_cnt, F && f, uniq_vector<T> && vec) {
-	struct {
-		F & f;
-		int th_cnt;
-		uniq_vector<T> operator () (uniq_vector <T> & vec) {
-			return !vec->size() ?
-				move (vec):
-				[this, &vec] () {
-					T tail = std::move (vec->at(vec->size() - 1));
-					auto ass (
-						assort (this->th_cnt, 2,
-							[this, &tail] (T & elem) {
-								return this->f (elem, tail) ? 1 : 0;
-							},
-							left_of (vec, vec->size() - 1)
-							));
-					return combine (
-						append (std::move (tail), (*this) (ass->at(1))),
-						(*this) (ass->at(0))
-						);
-				} ();
-		}
-	} self = {f, th_cnt};
-	return self (vec);
-}
-
-uniq_vector <uniq<Hoge>> Eratosthenes(int x){
-	timer t ("Eratosthenes()");
-	uniq_vector <uniq<Hoge>> arr (new std::vector <uniq<Hoge>> (x));
-	for(int i = 0; i < x; i++){
-		arr->at(i) = uniq<Hoge>(new Hoge(i));
-	}
-	int sqrt_x = sqrt(x);
-	for(int i = 2; i < sqrt_x; i++){
-		if(arr->at(i)->get_num()){
-			for(int j = 0; i * (j + 2) < x; j++){
-				arr->at(i *(j + 2))->set_num (0);
-			}
-		}
-	}
-	return filter_of (arr,
-		[] (uniq<Hoge> & hoge) {
-			return hoge->get_num() ? true : false;
-		});
-}
-
-uniq_vector<uniq<Hoge>> eratosthenes (int x, int th_cnt)
-{
-	timer t ("eratosthenes()");
-	auto s_vec = progress (x - 1, uniq <Hoge> (new Hoge (x)),
-		[] (uniq<Hoge> & pre) {
-			return uniq <Hoge> (new Hoge (pre->get_num() - 1));
-		});
-	auto p_vec = uniq_vector<uniq<Hoge>> (new std::vector<uniq<Hoge>>);
-	struct {
-		int end;
-		int th_cnt;
-		uniq_vector<uniq<Hoge>> operator () (uniq_vector <uniq<Hoge>> & s_vec, uniq_vector <uniq<Hoge>> & p_vec) {
-			auto & head = s_vec->at(s_vec->size() - 1);
-			return head->get_num() >= end ?
-				reverse (combine (move (s_vec), reverse_of (p_vec))):
-				[this, &head, &s_vec, &p_vec] () {
-					int head_num = head->get_num();
-					auto new_pvec = append_of (p_vec, head);
-					auto new_svec =
-						filter  (this->th_cnt,
-							[head_num] (uniq<Hoge> & hoge) {
-								return hoge->get_num() % head_num;
-							},
-						left_of (s_vec, s_vec->size() -1)
-						);
-					return (*this) (new_svec, new_pvec);
-				} ();
-		}
-	} loop = {(int)sqrt(x), th_cnt};
-	return loop (s_vec, p_vec);
-}
-
-void test_7 ()
-{
-	auto combined = combine (
-		uniq_vector <int> (new std::vector<int>{8, 4, 3, 9, 5}),
-		uniq_vector <int> (new std::vector<int>{7, 1, 6, 2}));
-	std::cout << combined << std::endl;
-	auto righted = right (4, move (combined));
-	std::cout << righted << std::endl;
-	auto appended = append (1, move (righted));
-	std::cout << appended << std::endl;
-			auto sel (
-				assort (2,
-					[] (int & elem) {
-						return elem > 5 ? 1 : 0;
-					},
-					uniq_vector <int> (new std::vector<int>{8, 4, 3, 9, 5, 7, 1, 6, 2})
-					));
-	std::cout << sel << std::endl;
-
-	auto sorted =
-		quick_sort (1,
-		[] (int a, int b) {
-			return a < b;
-		},
-		uniq_vector <int> (new std::vector<int>{8, 4, 3, 9, 5, 7, 1, 6, 2})
 		);
-	std::cout << sorted << std::endl;
+	
+	for (int i = 1; i <= 3; i++)
+		if (hoges [i - 1]->get_num () != i * 2)
+			return false;
+	
+    return true;
 }
 
-void test_8()
+std::vector<uniq<Hoge>> make_hoges (int len, int init=1, int step=1)
 {
-	timer t ("test_8()");
-	auto sorted =
-		left (10,
-		quick_sort (1,
-			[] (uniq<Hoge> & small, uniq<Hoge> & large) {
-				return small->get_num() < large->get_num();
+	return progress (len, uniq<Hoge>(new Hoge (init)),
+		[step] (const uniq<Hoge> & hoge) {
+			return uniq<Hoge>(new Hoge (hoge->get_num() + step));
+		});
+}
+
+bool make_hoges__test ()
+{
+	puts ("make_hoges__test");
+	auto hoges (make_hoges(10, 1, 2));
+	for (int i=0; i<10; i++)
+		if (hoges [i]->get_num() != 1 + i * 2)
+			return false;
+	return true;
+}
+
+bool make_hoges__test2 ()
+{
+	puts ("make_hoges__test2");
+	auto hoges (make_hoges(10, 2));
+	for (int i=0; i<10; i++) {
+		if (hoges [i]->get_num() != i + 2)
+			return false;
+	}
+	return true;
+}
+
+bool make_hoges__test3 ()
+{
+	puts ("make_hoges__test3");
+	auto hoges (make_hoges(10, 2));
+	for (int i=0; i<10; i++) {
+		if (hoges [i]->get_num() != i + 2)
+			return false;
+	}
+	return true;
+}
+
+bool compare__ttest ()
+{
+	puts ("compare__ttest");
+	auto hoges1 = make_hoges(10);
+	auto hoges2 = make_hoges(10);
+	return compare (hoges1, hoges2);
+}
+
+bool compare__ftest0 ()
+{
+	puts ("compare__ftest0");
+	auto hoges1 = make_hoges(10);
+	auto hoges2 = make_hoges(9);
+	return !compare (hoges1, hoges2);
+}
+
+bool compare__ftest1 ()
+{
+	puts ("compare__ftest1");
+	auto hoges1 = make_hoges(10, 1, 1);
+	auto hoges2 = make_hoges(10, 1, 2);
+	return !compare (hoges1, hoges2);
+}
+
+bool append__test ()
+{
+	puts ("append__test");
+	auto good = make_hoges(11);
+	auto hoges =
+		append (uniq<Hoge> (new Hoge(11)),
+		make_hoges(10)
+		);
+	return compare (hoges, good);
+}
+
+bool make_uniq_vector__test ()
+{
+	puts ("make_uniq_vector__test");
+	auto good = make_hoges(10);
+	std::vector<int> inits = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+	auto hoges = make_uniq_vector<Hoge>(inits);
+	return compare (hoges, good);
+}
+
+bool compare__ttest1()
+{
+	puts ("compare__ttest1 # compare vector-vector");
+	std::vector <std::vector<uniq<Hoge>>> hoges1 (3);
+	hoges1 [0] = make_hoges (3, 1);
+	hoges1 [1] = make_hoges (3, 4);
+	hoges1 [2] = make_hoges (3, 7);
+
+	std::vector <std::vector<uniq<Hoge>>> hoges2 (3);
+	hoges2 [0] = make_hoges (3, 1);
+	hoges2 [1] = make_hoges (3, 4);
+	hoges2 [2] = make_hoges (3, 7);
+
+	return compare (hoges1, hoges2);
+}
+
+bool compare__ftest2()
+{
+	puts ("compare__ftest2 # compare vector-vector");
+	std::vector <std::vector<uniq<Hoge>>> hoges1 (2);
+	hoges1 [0] = make_hoges (3, 1);
+	hoges1 [1] = make_hoges (3, 4);
+
+	std::vector <std::vector<uniq<Hoge>>> hoges2 (3);
+	hoges2 [0] = make_hoges (3, 1);
+	hoges2 [1] = make_hoges (3, 4);
+	hoges2 [2] = make_hoges (3, 7);
+
+	return ! compare (hoges1, hoges2);
+}
+
+bool group__test ()
+{
+	puts ("group__test");
+	std::vector <std::vector<uniq<Hoge>>> good (3);
+	good [0] = make_hoges (3, 1);
+	good [1] = make_hoges (3, 4);
+	good [2] = make_hoges (3, 7);
+	auto hoges =
+		group (3,
+		make_hoges(9)
+		);
+	return compare (hoges, good);
+}
+
+bool group__test2 ()
+{
+	puts ("group__test # remainder");
+	std::vector <std::vector<uniq<Hoge>>> good (3);
+	good [0] = make_hoges (3, 1);
+	good [1] = make_hoges (3, 4);
+	good [2] = make_hoges (2, 7);
+	auto hoges =
+		group (3,
+		make_hoges (8)
+		);
+	return compare (hoges, good);
+}
+
+bool join__test ()
+{
+	puts ("join__test");
+	auto good = make_hoges(10);
+	
+	auto hoges =
+		join (
+		group (3,
+		make_hoges (10)
+		));
+	return compare (hoges, good);
+}
+
+bool assort__test ()
+{
+	puts ("assort__test");
+	std::vector<int> inits = {1, 3, 5, 7, 2, 4, 6, 8};
+	auto good =
+		group (4,
+		make_uniq_vector <Hoge> (inits)
+		);
+	auto hoges =
+		assort (2,
+			[] (uniq<Hoge> & hoge) {
+				return hoge->get_num() % 2 ? 0 : 1;
+			},
+		make_hoges(8)
+		);
+	return compare (hoges, good);
+}
+
+bool combine__test ()
+{
+	puts ("combine__test");
+	auto good = make_hoges (10);
+	auto hoges =
+		combine (
+			make_hoges (4, 1),
+			make_hoges (6, 5)
+		);
+	return compare (hoges, good);
+}
+
+bool filter__test ()
+{
+	puts ("filter__test");
+	auto good = make_hoges (5, 2, 2);
+	auto hoges =
+		filter (
+			[] (uniq<Hoge> & hoge) {
+				return !(hoge->get_num() % 2);
+			},
+		make_hoges (10)
+		);
+	return compare (hoges, good);
+}
+
+bool fold__test ()
+{
+	puts ("fold__test");
+	auto sum =
+		fold (0,
+			[] (int && acc, uniq<Hoge> & hoge) {
+				acc += hoge->get_num();
+				return acc;
+			},
+		make_hoges(5)
+		);
+	return sum == 15;
+}
+
+bool take__test ()
+{
+	puts ("left__test");
+	auto good = make_hoges (5);
+	auto hoges =
+		take (5,
+		make_hoges (10)
+		);
+	return compare(hoges, good);
+}
+
+bool list_to_vector__test ()
+{
+	puts ("list_to_vector__test");
+	auto good = make_hoges(3);
+	
+	std::list<uniq<Hoge>> list;
+	list.insert (list.begin(), uniq<Hoge> (new Hoge (3)));
+	list.insert (list.begin(), uniq<Hoge> (new Hoge (2)));
+	list.insert (list.begin(), uniq<Hoge> (new Hoge (1)));
+	
+	auto hoges = list_to_vector (move(list));
+	
+	return compare (hoges, good);
+}
+
+bool map__test ()
+{
+	puts ("map__test");
+	
+	struct number {
+		int num;
+		bool operator == (const number & n) const
+			{ return num == n.num; }
+	};
+	std::vector <number> good = {{2}, {4}, {6}, {8}, {10}};
+	auto nums =
+		map (
+			[](uniq<Hoge> && hoge) {
+				int num = hoge->get_num ();
+				return number {num * 2};
+			},
+		make_hoges(5)
+		);
+	return nums == good;
+}
+
+bool map__test2 ()
+{
+	puts ("map__test");
+	
+	auto good = make_hoges (5, 2, 2);
+	auto hoges =
+		map (
+			[](uniq<Hoge> && hoge) {
+				int num = hoge->get_num ();
+				*hoge = Hoge (num * 2);
+				return move (hoge);
+			},
+		make_hoges (5)
+		);
+	
+	return compare (hoges, good);
+}
+
+bool reduce__test ()
+{
+	puts ("reduce__test");
+	auto good = uniq<Hoge> (new Hoge (15));
+	auto hoge =
+		reduce (
+			[] (uniq<Hoge> && acc, uniq<Hoge> && hoge) {
+				int num_1 = acc->get_num ();
+				int num_2 = hoge->get_num ();
+				acc->set_num (num_1 + num_2);
+				return move (acc);
+			},
+		make_hoges (5)
+		);
+	
+	return *good == *hoge;
+}
+
+bool refdup__test ()
+{
+	puts ("refdup__test");
+	auto hoges = make_hoges (10);
+	auto refs =
+		take (5,
+		refdup (hoges)
+		);
+	
+	for (int i=0; i<5; i++)
+		if (hoges[i]->get_num() != refs[i]->get_num())
+			return false;
+	
+	if (hoges[9]->get_num() != 10)
+		return false;
+	
+	return true;
+}
+
+bool refdup__test2 ()
+{
+	puts ("refdup__test2");
+	std::vector<int> ints = {0, 1, 2, 3, 4, 5};
+	auto refs =
+		take (3,
+		refdup (ints)
+		);
+	
+	for (int i=0; i<3; i++)
+		if (ints[i] != *refs[i])
+			return false;
+	
+	if (ints [5] != 5)
+		return false;
+	
+	return true;
+}
+
+bool refdup__test3 ()
+{
+	puts ("refdup__test3");
+	auto hoges = make_hoges (10);
+	auto folded =
+		reduce (
+			[] (ref_ptr<uniq<Hoge>> && acc, ref_ptr<uniq<Hoge>> && hoge) {
+				acc->set_num (acc->get_num() + hoge->get_num());
+				return std::move (acc);
+			},
+		take (5,
+		refdup (hoges)
+		));
+	
+	if (folded->get_num() != 15)
+		return false;
+	
+	if (!(hoges [0]->get_num() == 15 && hoges[9]->get_num() == 10))
+		return false;
+	
+	return true;
+}
+
+bool reverse__test () {
+	puts ("reverse__test");
+	auto good = make_hoges(10, 10, -1);
+	auto hoges =
+		reverse (
+		make_hoges(10)
+		);
+	return compare(hoges, good);
+}
+
+bool drop__test ()
+{
+	puts ("right__test");
+	auto good = make_hoges(6, 5);
+	auto hoges =
+		drop (4,
+		make_hoges (10)
+		);
+	return compare (good, hoges);
+}
+
+bool shuffle__test ()
+{
+	puts ("shuffle__test");
+	auto hoges = make_hoges(10);
+	auto shuffled =
+		shuffle (
+		make_hoges(10));
+	return ! compare (hoges, shuffled);
+}
+
+void overwrite__test ()
+{
+	uniq<Hoge> hoge (new Hoge(0));
+	*hoge = Hoge(1);
+	uniq<const Hoge> hoge2 (new Hoge(1));
+//	*hoge2 = Hoge(1);
+//	hoge2->set_num(1);
+}
+
+bool foreach__test ()
+{
+	puts ("foreach__test");
+	auto good = make_hoges (5);
+	auto hoges =
+		foreach (1,
+			[] (int && acc, const uniq<Hoge> & hoge) {
+				std::cout << acc++ << ':' << hoge << std::endl;
+				return std::move (acc);
+			},
+		make_hoges (5)
+		);
+		
+	return compare (hoges, good);
+}
+
+bool display__test ()
+{
+	puts ("display__test");
+	auto good = make_hoges (5);
+	auto hoges =
+		display ("hoges",
+		make_hoges (5)
+		);
+	display_of (hoges, "hoges");
+	return compare (hoges, good);
+}
+
+bool fold_of__test ()
+{
+	puts ("fold_of__test");
+	auto good =	15;
+	auto hoges = make_hoges(5);
+	auto folded = fold_of (hoges, 0,
+		[] (int && acc, const uniq<Hoge> & hoge) {
+			acc += hoge->get_num();
+			return std::move (acc);
+		});
+	return folded == good && compare (hoges, make_hoges(5));
+}
+
+bool sort__test ()
+{
+	puts ("sort__test");
+	auto good = make_hoges (10);
+	auto hoges =
+		sort (
+			[] (uniq<Hoge> & x, uniq<Hoge> & y) {
+				return y->get_num() > x->get_num();
 			},
 		shuffle (
-		progress (100000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-			}
-		))));
-	std::cout << sorted << std::endl;
-}
-
-int test_9(int th_cnt, int x)
-{
-	auto start = std::chrono::system_clock::now();
-	auto primes = eratosthenes (x, th_cnt);
-	auto end = std::chrono::system_clock::now();
-//	std::cout << primes << std::endl;
-    auto diff = end - start;
-	return std::chrono::duration_cast<std::chrono::milliseconds>(diff).count();
-}
-
-void test_10 ()
-{
-	int x = 1000;
-	test_5(1, x);
-	test_5(2, x);
-}
-
-#define TH_CNT 3
-void test_11 () {
-	timer t ("test_11");
-	uniq_vector<uniq<Hoge>> sources [TH_CNT];
-	uniq_vector<uniq<Hoge>> results [TH_CNT];
-	std::vector<std::thread> threads;
-	for (int i = 0; i < TH_CNT; i++) {
-		sources [i] =
-			progress (100000, uniq <Hoge> (new Hoge(1)),
-				[] (uniq<Hoge> & hoge) {
-					return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-				});
-	}
-	for (int i = 0; i < TH_CNT; i++) {
-//		threads.push_back(std::thread([i, &sources, &results] {
-			results[i] =
-				/*
-				quick_sort (1,
-					[] (uniq<Hoge> & small, uniq<Hoge> & large) {
-						return small->get_num() < large->get_num();
-					},
-				*/
-				join (
-				reverse (
-				group (3,
-				shuffle_of (sources[i])
-				)));
-//		}));
-	}
-	for (std::thread &th : threads) {
-		th.join();
-	}
-	for (int i=0; i<TH_CNT; i++) {
-		auto r = left_of (results [i], 10);
-		std::cout << r << std::endl;
-	}
-}
-
-void test_12 () {
-	auto src =
-		group    (100000,
-		progress (1000000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-			}
+		make_hoges (10)
 		));
-	timer t ("test12");
-	auto r =
-		map <uniq_vector<uniq<Hoge>>> (2,
-			[] (uniq_vector<uniq<Hoge>> & hoges) {
-				return
-//					left (10,
-					quick_sort (1,
-						[] (uniq<Hoge> & small, uniq<Hoge> & large) {
-							return small->get_num() < large->get_num();
-						},
-					shuffle_of (hoges)
-					);
-			},
-		move (src)
-		);
-//	std::cout << r << std::endl;
+	return compare(good, hoges);
 }
 
-void test_13 () {
-	auto r =
-		reduce (
-			[] (uniq<Hoge> & x, uniq<Hoge> & y) {
-				return uniq <Hoge> (new Hoge (x->get_num() + y->get_num()));
-			},
-		progress(10, uniq<Hoge> (new Hoge (0)),
-			[] (uniq<Hoge> & hoge) {
-				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-			}
-		));
-	std::cout << r << std::endl;
+bool map_of__test ()
+{
+	puts ("map_of__test");
+	auto good = progress (5, 2,
+		[] (int & n) {
+			return n + 2;
+		});
+	auto hoges = make_hoges (5);
+	auto mapped = map_of (hoges,
+		[](const uniq<Hoge> & hoge) {
+			int num = hoge->get_num ();
+			return num * 2;
+		});
 	
-	auto p =
-		progress (10, uniq<Hoge> (new Hoge (0)),
-			[] (uniq<Hoge> & hoge) {
-				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-			});
-	auto r2 =
-		reduce_of (p,
-			[] (uniq<Hoge> & x, uniq<Hoge> & y) {
-				return uniq <Hoge> (new Hoge (x->get_num() + y->get_num()));
-			}
-		);
-	std::cout << r2 << std::endl;
+	return mapped == good;
 }
 
-void test_14 ()
-{
-	eratosthenes(100000, 1);
-	Eratosthenes(100000);
-//	std::cout << eratosthenes(100000, 1) << std::endl;
-//	std::cout << Eratosthenes(100000) << std::endl;
-}
-
-void test_15 ()
-{
-	timer t ("test_15");
-	auto hoge =
-		fold (uniq<Hoge> (new Hoge (1)),
-			[] (uniq<Hoge> & x, uniq<Fuga> & y) {
-				int xn = x->get_num();
-				int yn = y->get_num();
-				x->set_num (xn + yn);
-				return move (x);
-			},
-		filter (2,
-			[] (uniq<Fuga> & fuga) {
-				int num = fuga->get_num(); 
-				return
-					!(num % 2) ?
-						false:
-					!(num % 3) ?
-						false:
-					true;
-			},
-		map <uniq<Fuga>> (2,
-			[] (uniq<Hoge> & hoge) {
-				return uniq<Fuga> (new Fuga (hoge->get_num() * 5));
-			},
-		progress (1000, uniq <Hoge> (new Hoge(1)),
-			[] (uniq<Hoge> & hoge) {
-				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
-			}
-		))));
-	std::cout << hoge->get_num() << std::endl;
+bool test_all () {
+	overwrite__test ();
+	
+	return
+		progress__test () &&
+		make_hoges__test () &&
+		make_hoges__test2 () &&
+		make_hoges__test3 () &&
+		compare__ttest () &&
+		compare__ftest0 () &&
+		compare__ftest1 () &&
+		append__test () &&
+		make_uniq_vector__test () &&
+		compare__ttest1 () &&
+		compare__ftest2 () &&
+		group__test () &&
+		group__test2 () &&
+		join__test () &&
+		assort__test () &&
+		combine__test () &&
+		filter__test () &&
+		fold__test () &&
+		take__test () &&
+		list_to_vector__test () &&
+		map__test () &&
+		map__test2 () &&
+		reduce__test () &&
+		refdup__test2 () &&
+		refdup__test3 () &&
+		reverse__test () &&
+		drop__test () &&
+		shuffle__test () &&
+		foreach__test () &&
+		display__test () &&
+		fold_of__test () &&
+		sort__test () &&
+		map_of__test ();
 }
 
 int main(int argc, const char * argv[])
 {
-//	test_0();
-//	test_1();
-//	test_2();
-//	test_3();
-//	test_4();
-//	test_5();
-//	test_6();
-//	test_7();
-//	test_8();
-//	int x = 100000;
-//	test_9(1, x);
-//	test_9(2, x);
-//	test_9(3, x);
-//	test_10();
-//	test_11();
-//	test_12();
-//	test_13();
-//	test_14();
-	test_15();
+	puts (test_all() ? "good." : "bad.");
+	
 	printf ("Fuga::copy_cnt = %d\n", Fuga::copy_cnt);
 	printf ("Fuga::life_cnt = %d\n", Fuga::life_cnt);
 	printf ("Hoge::copy_cnt = %d\n", Hoge::copy_cnt);
