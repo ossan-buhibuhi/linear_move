@@ -572,6 +572,27 @@ bool map_of__test ()
 	return mapped == good;
 }
 
+bool product_of__test ()
+{
+	puts ("product_of__test");
+	std::vector <int> inits = {2, 2, 2, 4, 4, 2, 4, 4};
+	auto good = make_uniq_vector<Hoge>(inits);
+	auto vec1 = make_hoges (4);
+	auto vec2 = make_hoges (4);
+	auto hoges =
+		product_of (vec1, [&] (uniq<Hoge> & hoge1) {
+			return product_of (vec2, [&] (uniq<Hoge> & hoge2) {
+				int num1 = hoge1->get_num();
+				int num2 = hoge2->get_num();
+				std::vector<int> inits = {num1, num2};
+				return num1 % 2 || num2 % 2 ?
+					std::vector<uniq<Hoge>> {}:
+					make_uniq_vector<Hoge> (inits);
+			});
+		});
+	return compare (good, hoges);
+}
+
 bool test_all () {
 	overwrite__test ();
 	
@@ -608,7 +629,8 @@ bool test_all () {
 		display__test () &&
 		fold_of__test () &&
 		sort__test () &&
-		map_of__test ();
+		map_of__test () &&
+		product_of__test ();
 }
 
 int main(int argc, const char * argv[])

@@ -253,6 +253,22 @@ auto map (F && f, std::vector<T> && vec)
 }
 
 template <class T, class F>
+auto product_of (std::vector<T> & vec, F && f)
+-> typename std::result_of<F(T&)>::type
+{
+	size_t len = vec.size();
+	typename std::result_of<F(T&)>::type ret;
+	for (size_t i=0; i < len; i++) {
+		auto r = f (vec[i]);
+//		std::copy (r.begin(), r.end(), std::back_inserter (ret));
+		size_t r_len = r.size();
+		for (size_t j=0; j < r_len; j++)
+			ret.push_back (move (r[j]));
+	}
+	return move (ret);
+}
+
+template <class T, class F>
 auto map_of (std::vector<T> & vec, F && f)
 -> std::vector<typename std::result_of<F(T)>::type>
 {
