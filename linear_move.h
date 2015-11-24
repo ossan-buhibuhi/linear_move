@@ -1,8 +1,7 @@
 //
 //  linear_move.h
 //
-//  Created by 松崎暁 on 2015/11/14.
-//  Copyright (c) 2015年 松崎暁. All rights reserved.
+//  Copyright (c) 2015 Matsusaki Satoru. All rights reserved.
 //
 //  Released under the MIT license
 //  http://opensource.org/licenses/mit-license.php
@@ -14,16 +13,14 @@
 #include <iostream>
 #include <list>
 #include <vector>
-#include <thread>
 #include <memory>
 #include <cassert>
 #include <random>       // std::default_random_engine
 
-template <typename T>
-using uniq = std::unique_ptr<T>;
+namespace lm {
 
 template <typename T>
-using uniq_vector = uniq<std::vector<T>>;
+using uniq = std::unique_ptr<T>;
 
 template <class T>
 class ref_ptr {
@@ -50,15 +47,15 @@ std::ostream& operator<<(std::ostream & os, ref_ptr<uniq<T>> & r)
 }
 
 template <typename T>
-std::ostream& operator<<(std::ostream & os, const std::vector <T> & vec)
+std::ostream& operator<<(std::ostream & os, const std::vector <ref_ptr<T>> & vec)
 {
 	os << "(";
 	size_t len = vec.size();
 	if (len) {
-		os << vec.at(0);
+		os << *vec[0];
 		for(int i=1; i<len; i++) {
 			os << ' ';
-			os << vec.at(i);
+			os << *vec[i];
 		}
 	}
 	os << ")";
@@ -67,15 +64,15 @@ std::ostream& operator<<(std::ostream & os, const std::vector <T> & vec)
 }
 
 template <typename T>
-std::ostream& operator<<(std::ostream & os, const uniq_vector <T> & vec)
+std::ostream& operator<<(std::ostream & os, const std::vector <T> & vec)
 {
 	os << "(";
-	size_t len = vec->size();
+	size_t len = vec.size();
 	if (len) {
-		os << vec->at(0);
+		os << vec[0];
 		for(int i=1; i<len; i++) {
 			os << ' ';
-			os << vec->at(i);
+			os << vec[i];
 		}
 	}
 	os << ")";
@@ -121,6 +118,19 @@ std::vector<uniq<T>> make_uniq_vector (std::vector<I> inits)
 	return move (vec);
 }
 
+template <class T, class I>
+std::vector<T> make_vector (std::vector<I> inits)
+{
+	size_t len = inits.size();
+	std::vector <T> vec (len);
+	if (!len)
+		return move (vec);
+	for (size_t i=0; i<len; i++)
+		vec [i] = T (inits[i]);
+	
+	return move (vec);
+}
+
 template <class T, class F>
 T reduce (F && f, std::vector<T> && vec) {
 	assert (vec.size());
@@ -135,8 +145,15 @@ template <class A, class T, class F>
 A fold (A && acc, F && f, std::vector<T> && vec) {
 	size_t len = vec.size();
 	for (int i=0; i<len; i++)
-		acc = f (std::move (acc), vec[i]);
+		acc = f (std::move (acc), std::move (vec[i]));
 	return std::move (acc);
+}
+
+template <class A, class F>
+A loop (A && arg, F && f) {
+	while (std::get<0> (arg))
+		arg = f (std::move (arg));
+	return std::move (arg);
 }
 
 template <class T>
@@ -149,6 +166,14 @@ template <class T, class F>
 std::vector<T> sort (F && f, std::vector<T> && vec) {
 	std::sort (vec.begin(), vec.end(), std::move (f));
 	return move (vec);
+}
+
+template <class T, class F>
+size_t find_of (std::vector<T> & vec, F && f) {
+	auto first = vec.begin();
+	auto pos = std::find_if (first, vec.end(), std::move (f));
+	size_t ret = std::distance (first, pos);
+	return ret;
 }
 
 template <class T>
@@ -187,6 +212,17 @@ bool compare (const std::vector<std::vector<T>> & vec1, const std::vector<std::v
 }
 
 template <class T>
+bool compare (const std::vector<T> & vec1, const std::vector<T> & vec2) {
+	size_t len = vec1.size();
+	if (len != vec2.size())
+		return false;
+	for (size_t i=0; i<len; i++)
+		if (vec1[i] != vec2[i])
+			return false;
+	return true;
+}
+
+template <class T>
 std::vector<T> combine (std::vector<T> && vec, std::vector<T> && vec2) {
 	size_t pre_len = vec.size();
 	size_t new_len = pre_len + vec2.size();
@@ -217,6 +253,34 @@ std::vector<T> drop (size_t len, std::vector<T> && vec) {
 	vec.resize (vec.size() - len);
 
 	return move (vec);
+}
+
+template <class T, class F>
+std::vector<T> drop_while (F && f, std::vector<T> && vec) {
+	size_t len = vec.size();
+	size_t i = 0;
+	for (; i<len; i++)
+		if (!f (vec [i]))
+			break;
+	if (!i)
+		return move (vec);
+	if (i == len)
+		return std::vector<T> {};
+	return drop (i, move (vec));
+}
+
+template <class T, class F>
+std::vector<T> take_while (F && f, std::vector<T> && vec) {
+	size_t len = vec.size();
+	size_t i = 0;
+	for (; i<len; i++)
+		if (!f (vec [i]))
+			break;
+	if (!i)
+		return std::vector<T> {};
+	if (i == len)
+		return move (vec);
+	return take (i, move (vec));
 }
 
 template <class T>
@@ -250,6 +314,13 @@ auto map (F && f, std::vector<T> && vec)
 		ret[i] = f (std::move (vec[i]));
 
 	return move (ret);
+}
+
+template <class F>
+auto let (F && f)
+-> typename std::result_of<F()>::type
+{
+	return f();
 }
 
 template <class T, class F>
@@ -307,16 +378,15 @@ U fold_of (std::vector<T> & vec, U && acc, F && f)
 template <class T, class F>
 std::vector<T> filter (F && f, std::vector<T> && vec) {
 	size_t len = vec.size();
-	std::vector<T> vec2 (len);
 	size_t cnt = 0;
 	for (size_t i=0; i<len; i++) {
 		T & e = vec [i];
 		if (f (e))
-			vec2 [cnt++] = std::move (e);
+			vec [cnt++] = std::move (e);
 	}
-	vec2.resize (cnt);
+	vec.resize (cnt);
 
-	return move (vec2);
+	return move (vec);
 }
 
 template <class T, class F>
@@ -381,5 +451,7 @@ std::vector<ref_ptr<T>> refdup (std::vector<T> & vec) {
 		ret [i] = ref_ptr<T> (vec [i]);
 	return move (ret);
 }
+
+} // namespace
 
 #endif

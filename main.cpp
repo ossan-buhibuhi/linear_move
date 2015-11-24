@@ -1,7 +1,7 @@
 //
 //  main.cpp
 //
-//  Copyright (c) 2015年 松崎暁. All rights reserved.
+//  Copyright (c) 2015 Matsusaki Satoru. All rights reserved.
 //
 //  Released under the MIT license
 //  http://opensource.org/licenses/mit-license.php
@@ -10,26 +10,32 @@
 #include <iostream>
 #include "linear_move.h"
 
+using namespace lm;
+
 class Fuga {
 	int num;
 public:
 	static int copy_cnt;
 	static int life_cnt;
+	Fuga ()
+	: num (0)
+		{ life_cnt++; }
 	Fuga (int n)
 	: num (n)
 		{ life_cnt++; }
 	Fuga (const Fuga & fuga)
+	: num (fuga.num)
 		{ life_cnt++; copy_cnt++; }
 	~Fuga ()
 		{ life_cnt--; }
-    Fuga(Fuga && self)
+    Fuga(Fuga && self) noexcept
 	: num (std::move (self.num))
-		{};
+		{ life_cnt++; };
     Fuga & operator = (Fuga && self)
 		{ num = std::move(self.num); return *this; }
-	bool operator == (const Fuga & fuga)
+	bool operator == (const Fuga & fuga) const
 		{ return num == fuga.num; }
-	bool operator != (const Fuga & fuga)
+	bool operator != (const Fuga & fuga) const
 		{ return num != fuga.num; }
 	int get_num () const
 		{ return num; }
@@ -45,23 +51,22 @@ class Hoge {
 public:
 	Hoge ()
 		{ life_cnt++; }
-	Hoge (Hoge & hoge)
-	: fuga (move(hoge.fuga))
+	Hoge (const Hoge & hoge)
+	: fuga (new Fuga (*hoge.fuga))
 		{ life_cnt++; copy_cnt++; }
 	Hoge (int n)
 	: fuga (new Fuga (n))
 		{ life_cnt++; }
 	~Hoge ()
 		{ life_cnt--; }
-    Hoge(Hoge && self)
+    Hoge(Hoge && self) noexcept
 	: fuga (std::move (self.fuga))
-		{};
+		{ life_cnt++;};
     Hoge & operator = (Hoge && self)
 		{ fuga = std::move(self.fuga); return *this; }
-	
-	bool operator == (const Hoge & hoge)
+	bool operator == (const Hoge & hoge) const
 		{ return *fuga == *hoge.fuga; }
-	bool operator != (const Hoge & hoge)
+	bool operator != (const Hoge & hoge) const
 		{ return *fuga != *hoge.fuga; }
 	const uniq <Fuga> & get_fuga ()
 		{ return fuga; }
@@ -306,7 +311,7 @@ bool fold__test ()
 	puts ("fold__test");
 	auto sum =
 		fold (0,
-			[] (int && acc, uniq<Hoge> & hoge) {
+			[] (int && acc, uniq<Hoge> && hoge) {
 				acc += hoge->get_num();
 				return acc;
 			},
@@ -593,8 +598,268 @@ bool product_of__test ()
 	return compare (good, hoges);
 }
 
+template <class T, class F>
+std::vector<T> quick_sort (F && f, std::vector<T> && vec) {
+	struct {
+		F & f;
+		std::vector<T> loop (std::vector<T> & vec) {
+			return !vec.size() ?
+				move (vec):
+				let ([&] () {
+					T tail = std::move (vec [vec.size() - 1]);
+					auto ass =
+						assort (2,
+							[&] (T & elem) {
+								return this->f (elem, tail);
+							},
+							take (vec.size() - 1, move (vec)));
+					return combine (
+						append (std::move (tail), loop (ass [1])),
+						loop (ass [0]));
+				});
+		}
+	} self = {f};
+	return self.loop (vec);
+}
+
+std::vector<Fuga> eratosthenes_loop (int x)
+{
+	using fuga_vector = std::vector<Fuga>;
+	int end = (int)sqrt(x) + 1;
+	auto ret = loop (
+		std::make_tuple (true, fuga_vector{},
+			progress (x - 1, Fuga (x),
+				[] (Fuga & pre) {
+					return Fuga (pre.get_num() - 1);
+				}),
+			fuga_vector {}),
+		[&] (std::tuple<bool, fuga_vector, fuga_vector, fuga_vector> && arg) {
+			auto & s_vec = std::get<2>(arg);
+			auto & p_vec = std::get<3>(arg);
+			auto & head = s_vec [s_vec.size() - 1];
+			return head.get_num() >= end ?
+				std::make_tuple (false,
+					reverse (combine (move (s_vec), reverse (move (p_vec)))),
+					fuga_vector{}, fuga_vector{}):
+				let ([&] () {
+					int head_num = head.get_num();
+					auto new_pvec = append (std::move (head), move (p_vec));
+					auto new_svec =
+						filter (
+							[&] (Fuga & fuga) {
+								return fuga.get_num() % head_num;
+							},
+						take (s_vec.size() -1, move (s_vec))
+						);
+					return std::make_tuple (true, move (std::get<1>(arg)),
+						move (new_svec), move (new_pvec));
+				});
+			});
+	return std::move (std::get<1> (ret));
+}
+
+std::vector<Hoge> eratosthenes (int x)
+{
+	using hoge_vector = std::vector<Hoge>;
+	auto s_vec = progress (x - 1, Hoge (x),
+		[] (Hoge & pre) {
+			return Hoge (pre.get_num() - 1);
+		});
+	auto p_vec = hoge_vector {};
+	struct {
+		int end;
+		hoge_vector loop (hoge_vector & s_vec, hoge_vector & p_vec) {
+			auto & head = s_vec [s_vec.size() - 1];
+			return head.get_num() >= end ?
+				reverse (combine (move (s_vec), reverse (move (p_vec)))):
+				let ([&] () {
+					int head_num = head.get_num();
+					auto new_pvec = append (std::move (head), move (p_vec));
+					auto new_svec =
+						filter (
+							[&] (Hoge & hoge) {
+								return hoge.get_num() % head_num;
+							},
+						take (s_vec.size() -1, move (s_vec))
+						);
+					return loop (new_svec, new_pvec);
+				});
+		}
+	} self = {(int)sqrt(x) + 1};
+	return self.loop (s_vec, p_vec);
+}
+
+bool loop__test () {
+	puts ("loop__test");
+	auto ret = loop (std::make_tuple (true, 1),
+		[] (std::tuple<bool, int> && arg) {
+			int num = std::get<1> (arg) + 1;
+			return std::make_tuple (num < 5, num);
+		});
+	return std::get<1> (ret) == 5;
+}
+
+bool let__test () {
+	puts ("let__test");
+	return let ([]() {
+		return true;
+	});
+}
+
+bool find_of__test ()
+{
+	puts ("find_of__test");
+	auto hoges = make_hoges (10);
+	auto pos = find_of (hoges,
+		[] (uniq<Hoge> & hoge) {
+			return hoge->get_num() == 5;
+		});
+	return pos == 4;
+}
+
+bool drop_while__test ()
+{
+	puts ("drop_while__test");
+	auto good = make_hoges(5, 6);
+	auto hoges =
+		drop_while(
+			[] (uniq<Hoge> & hoge) {
+				return hoge->get_num() <= 5;
+			},
+		make_hoges(10)
+		);
+	return compare (good, hoges);
+}
+
+bool take_while__test ()
+{
+	puts ("take_while__test");
+	auto good = make_hoges (5);
+	auto hoges =
+		take_while (
+			[] (uniq<Hoge> & hoge) {
+				return hoge->get_num () <= 5;
+			},
+		make_hoges (10)
+		);
+	return compare (good, hoges);
+}
+
+bool quick_sort__test ()
+{
+	puts ("quick_sort__test");
+	auto good = make_hoges (10);
+	auto hoges =
+		quick_sort (
+			[] (uniq<Hoge> & x, uniq<Hoge> & y) {
+				return y->get_num() > x->get_num();
+			},
+		shuffle (
+		make_hoges (10)
+		));
+	return compare(good, hoges);
+}
+
+bool make_vector__test ()
+{
+	puts ("make_vector__test");
+	std::vector<int> inits = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+	auto fugas = make_vector<Fuga>(inits);
+	for (int i=0; i<10; i++)
+		if (fugas[i].get_num() != i + 1)
+			return false;
+	return true;
+}
+
+bool compare__ttest2 ()
+{
+	puts ("compare__ttest2");
+	std::vector<int> inits1 = {1, 2, 3, 4, 5};
+	auto fugas1 = make_vector<Fuga>(inits1);
+	std::vector<int> inits2 = {1, 2, 3, 4, 5};
+	auto fugas2 = make_vector<Fuga>(inits2);
+	return compare (fugas1, fugas2);
+}
+
+bool compare__ftest3 ()
+{
+	puts ("compare__ftest3");
+	std::vector<int> inits1 = {1, 2, 3, 4, 5};
+	auto fugas1 = make_vector<Fuga>(inits1);
+	std::vector<int> inits2 = {1, 2, 4, 8};
+	auto fugas2 = make_vector<Fuga>(inits2);
+	return !compare (fugas1, fugas2);
+}
+
+bool eratosthenes__test () {
+	puts ("eratosthenes__test");
+	std::vector<int> inits = {2, 3, 5, 7, 11, 13};
+	auto good = make_vector<Hoge>(inits);
+	auto hoges = eratosthenes (15);
+	return compare (good, hoges);
+}
+
+bool eratosthenes_loop__test () {
+	puts ("eratosthenes_loop__test");
+	std::vector<int> inits = {2, 3, 5, 7, 11, 13};
+	auto good = make_vector<Fuga>(inits);
+	auto hoges = eratosthenes_loop (15);
+	return compare (good, hoges);
+}
+
+void qiita_test () {
+	auto hoge =
+		fold (uniq<Hoge> (new Hoge (1)),
+			[] (uniq<Hoge> && x, uniq<Fuga> && y) {
+				int xn = x->get_num();
+				int yn = y->get_num();
+				x->set_num (xn + yn);
+				return move (x);
+			},
+		filter (
+			[] (uniq<Fuga> & fuga) {
+				int num = fuga->get_num();
+				return
+					!(num % 2) ?
+						false:
+					!(num % 3) ?
+						false:
+					true;
+			},
+		map (
+			[] (uniq<Hoge> && hoge) {
+				return uniq<Fuga> (new Fuga (hoge->get_num() * 5));
+			},
+		progress (1000, uniq <Hoge> (new Hoge(1)),
+			[] (uniq<Hoge> & hoge) {
+				return uniq <Hoge> (new Hoge (hoge->get_num() + 1));
+			}
+		))));
+	std::cout << hoge->get_num() << std::endl;
+
+	auto hoges (
+		progress (10, uniq <Hoge> (new Hoge(1)),
+			[] (uniq<Hoge> & hoge) {
+				int num = hoge->get_fuga()->get_num();
+				return uniq <Hoge> (new Hoge (num * 2));
+			}));
+	std::cout << hoges << std::endl;
+	auto refs (
+		take (2,
+		group (3,
+		take (8,
+		reverse (
+		refdup (hoges)
+		)))));
+
+	std::cout << refs << std::endl;
+	std::cout << refs[0][0]->get_num() << std::endl;
+	std::cout << hoges << std::endl;
+}
+
 bool test_all () {
 	overwrite__test ();
+	qiita_test ();
 	
 	return
 		progress__test () &&
@@ -630,7 +895,18 @@ bool test_all () {
 		fold_of__test () &&
 		sort__test () &&
 		map_of__test () &&
-		product_of__test ();
+		product_of__test () &&
+		loop__test () &&
+		let__test () &&
+		drop_while__test () &&
+		find_of__test () &&
+		take_while__test () &&
+		quick_sort__test () &&
+		make_vector__test () &&
+		compare__ttest2 () &&
+		compare__ftest3 () &&
+		eratosthenes__test () &&
+		eratosthenes_loop__test ();
 }
 
 int main(int argc, const char * argv[])
